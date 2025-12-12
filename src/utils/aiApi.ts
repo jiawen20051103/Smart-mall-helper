@@ -1,9 +1,6 @@
 // src/utils/aiApi.js
 import axios, { AxiosError, type AxiosInstance } from 'axios'
 
-// 调用自己的后端 API（密钥在服务器端，安全！）
-// 开发环境：http://localhost:5173/api/ai/chat
-// 生产环境：https://your-domain.vercel.app/api/ai/chat
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/ai'
 
 // 创建axios实例（不再包含密钥）
@@ -11,9 +8,8 @@ const aiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-    // ❌ 不再包含 Authorization，密钥由后端处理
   },
-  timeout: 60000 // 60秒超时，避免长文本生成时过早中断
+  timeout: 60000
 })
 
 // 通用的AI调用函数
