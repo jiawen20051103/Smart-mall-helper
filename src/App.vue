@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRoute, useRouter, RouterView } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -12,11 +14,26 @@ const menuItems = [
   { label: '用户洞察分析', path: '/insights', desc: '分层与推荐策略' },
 ]
 
+const searchKeyword = ref('')
+
 const handleSelect = (key: string) => {
   // console.log('菜单点击:', key, '当前路由:', route.path)
   if (key !== route.path) {
     router.push(key)
   }
+}
+
+const handleSearch = () => {
+  const keyword = searchKeyword.value.trim()
+  if (!keyword) {
+    ElMessage.info('请输入要搜索的数据/商品/用户关键词')
+    return
+  }
+  ElMessage.success(`已提交搜索：${keyword}`)
+}
+
+const handleCreateTask = () => {
+  ElMessage.success('已创建运营任务（示例），可接入实际接口')
 }
 </script>
 
@@ -31,14 +48,20 @@ const handleSelect = (key: string) => {
         </div>
       </div>
       <div class="header-actions">
-        <el-input placeholder="搜索数据/商品/用户" clearable class="search-input">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索数据/商品/用户"
+          clearable
+          class="search-input"
+          @keyup.enter="handleSearch"
+        >
           <template #prefix>
             <el-icon>
               <Search />
             </el-icon>
           </template>
         </el-input>
-        <el-button type="primary">创建运营任务</el-button>
+        <el-button type="primary" @click="handleCreateTask">创建运营任务</el-button>
       </div>
     </header>
 

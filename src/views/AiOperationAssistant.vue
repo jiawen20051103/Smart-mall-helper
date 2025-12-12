@@ -1,8 +1,18 @@
 <script setup lang="ts">
-import { reactive, ref,onMounted } from 'vue'
+import { reactive, ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { optimizeProductTitle,generateMarketingCopy,generateCustomerServiceReply } from '@/utils/aiApi'
+import { optimizeProductTitle, generateMarketingCopy, generateCustomerServiceReply } from '@/utils/aiApi'
+import { useAIStore } from '@/stores/aiStore'
+
+const aiStore = useAIStore()
+const historyVisible = ref(false)
+const historyFilter = ref<'all' | 'title' | 'copy' | 'qa'>('all')
+
+const filteredHistory = computed(() => {
+  if (historyFilter.value === 'all') return aiStore.history
+  return aiStore.history.filter((item) => item.type === historyFilter.value)
+})
 
 const titleForm = reactive({
   original: '夏日清爽真丝衬衫 女士通勤百搭',
@@ -12,7 +22,7 @@ const titleForm = reactive({
 const copyForm = reactive({
   product: '智能恒温杯 · 500ml',
   highlights: '保温12小时|食品级内胆|一键测温',
-  tone: '活力年轻',
+  tone: aiStore.userConfig.tone,
 })
 
 const qaForm = reactive({
@@ -54,6 +64,11 @@ const handleTitleGenerate = async () => {
     console.log('AI返回的标题:', result)
     optimizedTitle.value = result
     ElMessage.success('标题优化成功！')
+    aiStore.addHistory({
+      type: 'title',
+      input: `${titleForm.original} | ${titleForm.keywords}`,
+      output: result,
+    })
   } catch (error) {
     console.error('标题优化失败:', error)
     ElMessage.error(getErrorMessage(error) || '优化失败，请检查API密钥或网络连接')
@@ -80,6 +95,11 @@ const handleCopyGenerate = async () => {
     console.log('AI返回的文案:', result)
     generatedCopy.value = result
     ElMessage.success('文案生成成功！')
+    aiStore.addHistory({
+      type: 'copy',
+      input: `${copyForm.product} | ${copyForm.highlights} | ${copyForm.tone}`,
+      output: result,
+    })
   } catch (error) {
     console.error('文案生成失败:', error)
     ElMessage.error(getErrorMessage(error) || '生成失败，请检查API密钥或网络连接')
@@ -107,6 +127,11 @@ const handleQaGenerate = async () => {
     suggestions.value.unshift({
       question: qaForm.question,
       answer: answer
+    })
+    aiStore.addHistory({
+      type: 'qa',
+      input: qaForm.question,
+      output: answer,
     })
     
     // 只保留最新的3条
@@ -151,7 +176,10 @@ onMounted(() => {
         <div class="page-title">AI 运营助手</div>
         <div class="page-subtitle">基于商品与用户画像，秒级生成标题、文案与客服话术</div>
       </div>
-      <el-tag type="success" effect="dark">已连接私有大模型</el-tag>
+      <div class="hero-actions">
+        <el-tag type="success" effect="dark">已连接私有大模型</el-tag>
+        <el-button type="primary" link @click="historyVisible = true">查看历史</el-button>
+      </div>
     </section>
 
     <el-row :gutter="20">
@@ -161,7 +189,7 @@ onMounted(() => {
           <p class="tag-muted">智能拆解卖点，自动组合高转化关键词</p>
           <el-form :model="titleForm" label-position="top">
             <el-form-item label="原始标题">
-              <el-input v-model="titleForm.original" type="textarea" rows=2 />
+              <el-input v-model="titleForm.original" type="textarea" :rows="2" />
             </el-form-item>
             <el-form-item label="关键卖点/关键词（逗号分隔）">
               <el-input v-model="titleForm.keywords" />
@@ -231,7 +259,7 @@ onMounted(() => {
           <p class="tag-muted">覆盖常见问题，统一服务体验</p>
           <el-form :model="qaForm" label-position="top">
             <el-form-item label="客户问题">
-              <el-input v-model="qaForm.question" type="textarea" rows=2 />
+              <el-input v-model="qaForm.question" type="textarea" :rows="2" />
             </el-form-item>
           </el-form>
           <el-button 
@@ -252,6 +280,47 @@ onMounted(() => {
         </section>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="historyVisible" title="AI 生成历史" width="720px">
+      <template #default>
+        <div class="history-filter">
+          <el-segmented
+            v-model="historyFilter"
+            :options="[
+              { label: '全部', value: 'all' },
+              { label: '标题', value: 'title' },
+              { label: '文案', value: 'copy' },
+              { label: '客服', value: 'qa' },
+            ]"
+          />
+        </div>
+        <el-table :data="filteredHistory" height="360" stripe>
+          <el-table-column prop="type" label="类型" width="80">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.type === 'title' ? 'primary' : row.type === 'copy' ? 'success' : 'info'">
+                {{ row.type }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="input" label="输入" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="output" label="输出" min-width="260" show-overflow-tooltip />
+          <el-table-column prop="createdAt" label="时间" width="140">
+            <template #default="{ row }">
+              {{ new Date(row.createdAt).toLocaleString() }}
+            </template>
+          </el-table-column>
+        </el-table>
+        <template v-if="filteredHistory.length === 0">
+          <el-empty description="暂无历史记录" />
+        </template>
+      </template>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="historyVisible = false">关闭</el-button>
+          <el-button type="danger" text @click="aiStore.clearHistory()">清空历史</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -277,6 +346,23 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.page-subtitle {
+  margin-bottom: 0;
+}
+
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .tool-panel {
@@ -320,6 +406,12 @@ onMounted(() => {
 
 .qa-answer {
   color: var(--text-muted);
+}
+
+.history-filter {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
 }
 </style>
 

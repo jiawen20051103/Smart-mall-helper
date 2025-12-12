@@ -159,6 +159,10 @@ const statusType = (status: Product['status']) => {
 </template>
 
 <style scoped>
+.panel {
+  margin-top: 0;
+}
+
 .product-page {
   display: flex;
   flex-direction: column;

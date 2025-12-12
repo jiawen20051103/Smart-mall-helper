@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
 import { LineChart, BarChart } from 'echarts/charts'
 import {
@@ -40,20 +40,43 @@ const alerts = [
   { title: '华东大区广告点击异常上升', level: 'info', time: '25 分钟前' },
 ]
 
-const trendData = {
-  dates: ['11-18', '11-19', '11-20', '11-21', '11-22', '11-23', '11-24'],
-  sales: [980, 1120, 1180, 1240, 1190, 1286, 1320],
-  orders: [6200, 7100, 7300, 7600, 7200, 8213, 8400],
-}
+const trendDataMap = {
+  '7 天': {
+    dates: ['11-08', '11-09', '11-10', '11-11', '11-12', '11-13', '11-14'],
+    sales: [740, 820, 900, 1650, 1180, 980, 940],
+    orders: [5200, 6000, 6800, 11800, 8200, 7600, 7400],
+  },
+  '15 天': {
+    dates: ['11-10', '11-11', '11-12', '11-13', '11-14', '11-15', '11-16', '11-17', '11-18', '11-19', '11-20', '11-21', '11-22', '11-23', '11-24'],
+    sales: [780, 1650, 1420, 1180, 980, 940, 910, 960, 1120, 1180, 1240, 1190, 1286, 1320, 1260],
+    orders: [5400, 11800, 10200, 8600, 7200, 6900, 6600, 7100, 7400, 7300, 7600, 7200, 8213, 8400, 8000],
+  },
+  '30 天': {
+    dates: Array.from({ length: 30 }, (_, i) => {
+      const day = (i + 1).toString().padStart(2, '0')
+      return `11-${day}`
+    }),
+    sales: [
+      620, 640, 660, 610, 640, 670, 700, 720, 840, 1060,
+      1650, 1200, 1100, 980, 940, 910, 960, 1020, 980, 960,
+      1020, 980, 960, 1020, 1080, 1140, 1190, 1240, 1286, 1320,
+    ],
+    orders: [
+      3600, 3700, 3800, 4000, 4200, 4400, 4600, 4800, 5000, 5200,
+      11800, 9000, 8200, 7800, 7400, 7000, 6900, 6600, 6800, 7000,
+      7200, 7100, 6900, 6600, 7100, 7400, 7300, 7600, 7800, 8000,
+    ],
+  },
+} as const
 
 const orderStats = {
   categories: ['及时发货', '延迟发货', '售后处理中'],
   values: [86, 9, 5],
 }
 
-const initTrendChart = () => {
-  if (!trendChartRef.value) return
-  trendChart = echarts.init(trendChartRef.value)
+const updateTrendChart = () => {
+  if (!trendChart) return
+  const trendData = trendDataMap[trendRange.value as keyof typeof trendDataMap]
   trendChart.setOption({
     tooltip: { trigger: 'axis' },
     legend: { data: ['销售额(万)', '订单数'], bottom: 0 },
@@ -88,6 +111,12 @@ const initTrendChart = () => {
   })
 }
 
+const initTrendChart = () => {
+  if (!trendChartRef.value) return
+  trendChart = echarts.init(trendChartRef.value)
+  updateTrendChart()
+}
+
 const initOrderChart = () => {
   if (!orderChartRef.value) return
   orderChart = echarts.init(orderChartRef.value)
@@ -118,6 +147,10 @@ onMounted(() => {
   initTrendChart()
   initOrderChart()
   window.addEventListener('resize', handleResize)
+})
+
+watch(trendRange, () => {
+  updateTrendChart()
 })
 
 onBeforeUnmount(() => {
