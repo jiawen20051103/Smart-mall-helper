@@ -167,8 +167,8 @@ const handleCreateTask = () => {
 
 .app-nav :deep(.el-menu-item.is-active) {
   background: linear-gradient(120deg, rgba(63, 140, 255, 0.16), rgba(96, 165, 255, 0.2));
-  border-bottom: 3px solid #3f8cff;
-  box-shadow: 0 8px 18px rgba(63, 140, 255, 0.2);
+  /* border-bottom: 3px solid #3f8cff; */
+  /* box-shadow: 0 8px 18px rgba(63, 140, 255, 0.2); */
   padding-bottom: 17px;
 }
 

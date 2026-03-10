@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { reactive, ref, onMounted, computed } from 'vue'
+import { reactive, ref, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Loading } from '@element-plus/icons-vue'
-import { optimizeProductTitle, generateMarketingCopy, generateCustomerServiceReply } from '@/utils/aiApi'
+import { ChatDotRound, Close, Promotion, Loading } from '@element-plus/icons-vue'
+import { chatAI, type ChatMessage, optimizeProductTitle, generateMarketingCopy, generateCustomerServiceReply } from '@/utils/aiApi'
 import { useAIStore } from '@/stores/aiStore'
 
 const aiStore = useAIStore()
@@ -42,6 +42,87 @@ const suggestions = ref<Suggestion[]>([])
 const titleLoading = ref(false)
 const copyLoading = ref(false)
 const qaLoading = ref(false)
+
+// 浮动对话框状态
+const chatVisible = ref(false)
+const chatInput = ref('')
+const chatSending = ref(false)
+const chatListRef = ref<HTMLElement | null>(null)
+
+const chatMessages = computed(() => aiStore.chatMessages)
+
+const scrollChatToBottom = async () => {
+  await nextTick()
+  const el = chatListRef.value
+  if (!el) return
+  el.scrollTop = el.scrollHeight
+}
+
+watch(
+  () => chatMessages.value.length,
+  () => {
+    if (!chatVisible.value) return
+    void scrollChatToBottom()
+  }
+)
+
+const openChat = (seed?: string) => {
+  chatVisible.value = true
+  if (seed && seed.trim()) {
+    aiStore.addChatMessage({
+      role: 'user',
+      content: `请基于下面内容继续优化/改写，并给出可选版本（可追问）：\n${seed.trim()}`,
+    })
+  }
+  void scrollChatToBottom()
+}
+
+const closeChat = () => {
+  chatVisible.value = false
+}
+
+const clearChat = () => {
+  aiStore.clearChat()
+  ElMessage.success('已清空对话历史')
+}
+
+const handleChatSend = async () => {
+  const content = chatInput.value.trim()
+  if (!content || chatSending.value) return
+
+  chatSending.value = true
+  aiStore.addChatMessage({ role: 'user', content })
+  chatInput.value = ''
+
+  try {
+    const context: ChatMessage[] = aiStore.chatMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }))
+    const reply = await chatAI(context, {
+      max_tokens: aiStore.userConfig.maxTokens,
+      temperature: aiStore.userConfig.temperature,
+    })
+    const assistantId = aiStore.addChatMessage({ role: 'assistant', content: '' })
+    const full = reply || ''
+    let index = 0
+    const step = Math.max(2, Math.floor(full.length / 80))
+
+    const timer = window.setInterval(() => {
+      index += step
+      if (index >= full.length) {
+        aiStore.updateChatMessage(assistantId, { content: full })
+        window.clearInterval(timer)
+        return
+      }
+      aiStore.updateChatMessage(assistantId, { content: full.slice(0, index) })
+    }, 20)
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error) || '发送失败，请稍后重试')
+  } finally {
+    chatSending.value = false
+  }
+}
 
 const getErrorMessage = (err: unknown) => {
   if (err instanceof Error) return err.message
@@ -210,7 +291,12 @@ onMounted(() => {
               <el-icon class="is-loading"><Loading /></el-icon>
               <span>AI正在优化标题...</span>
             </div>
-            <p v-else>{{ optimizedTitle || '请输入标题并点击生成' }}</p>
+            <div v-else>
+              <p>{{ optimizedTitle || '请输入标题并点击生成' }}</p>
+              <div v-if="optimizedTitle && !optimizedTitle.includes('请输入')" class="result-actions">
+                <el-button size="small" link type="primary" @click="openChat(optimizedTitle)">继续对话优化</el-button>
+              </div>
+            </div>
           </div>
         </section>
       </el-col>
@@ -248,7 +334,12 @@ onMounted(() => {
               <el-icon class="is-loading"><Loading /></el-icon>
               <span>AI正在创作文案...</span>
             </div>
-            <p v-else>{{ generatedCopy || '请输入商品信息并点击生成' }}</p>
+            <div v-else>
+              <p>{{ generatedCopy || '请输入商品信息并点击生成' }}</p>
+              <div v-if="generatedCopy && !generatedCopy.includes('请输入')" class="result-actions">
+                <el-button size="small" link type="primary" @click="openChat(generatedCopy)">继续对话改写</el-button>
+              </div>
+            </div>
           </div>
         </section>
       </el-col>
@@ -321,6 +412,59 @@ onMounted(() => {
         </div>
       </template>
     </el-dialog>
+
+    <div class="floating-ball">
+      <el-button class="floating-btn" type="primary" circle :icon="ChatDotRound" @click="openChat()" />
+      <div class="floating-hint">对话</div>
+    </div>
+
+    <div v-if="chatVisible" class="chat-float">
+      <div class="chat-float-header">
+        <div class="chat-float-header-left">
+          <div class="chat-float-title">AI 对话</div>
+          <div class="chat-float-subtitle">基于当前运营场景持续追问和改写</div>
+        </div>
+        <div class="chat-float-header-right">
+          <el-button text size="small" @click="clearChat">清空</el-button>
+          <el-button :icon="Close" circle text @click="closeChat" />
+        </div>
+      </div>
+      <div ref="chatListRef" class="chat-float-body">
+        <div v-if="chatMessages.length === 0" class="chat-float-empty">
+          <div class="chat-float-empty-title">开始和运营专家聊聊</div>
+          <div class="chat-float-empty-desc">可以把上面的标题/文案复制过来，让我给你多几个版本或针对平台规则再优化。</div>
+        </div>
+        <div v-for="m in chatMessages" :key="m.id" class="chat-msg" :class="m.role">
+          <div class="chat-bubble">
+            <pre class="chat-text">{{ m.content }}</pre>
+          </div>
+        </div>
+        <div v-if="chatSending" class="chat-msg assistant">
+          <div class="chat-bubble">
+            <span class="chat-typing">正在生成…</span>
+          </div>
+        </div>
+      </div>
+      <div class="chat-float-input">
+        <el-input
+          v-model="chatInput"
+          type="textarea"
+          :rows="2"
+          resize="none"
+          placeholder="给AI助手发送消息吧 ~"
+          @keydown.enter.exact.prevent="handleChatSend"
+        />
+        <el-button
+          type="primary"
+          :icon="Promotion"
+          :loading="chatSending"
+          :disabled="!chatInput.trim()"
+          @click="handleChatSend"
+        >
+          发送
+        </el-button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -386,6 +530,12 @@ onMounted(() => {
   margin-bottom: 6px;
 }
 
+.result-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
 .qa-list {
   display: flex;
   flex-direction: column;
@@ -412,6 +562,170 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 12px;
+}
+
+.floating-ball {
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.floating-btn {
+  width: 52px;
+  height: 52px;
+  box-shadow: 0 12px 24px rgba(63, 140, 255, 0.32);
+}
+
+.floating-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2px 10px;
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.06);
+}
+
+.chat-float {
+  position: fixed;
+  right: 24px;
+  bottom: 96px;
+  width: 350px;
+  max-width: 100%;
+  height: 660px;
+  max-height: calc(100vh - 140px);
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.32);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 60;
+}
+
+.chat-float-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-float-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-float-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-float-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.chat-float-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chat-float-body {
+  flex: 1;
+  padding: 10px 10px 6px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: radial-gradient(circle at top left, rgba(148, 163, 184, 0.15), transparent 55%);
+}
+
+.chat-float-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--text-muted);
+  padding: 0 12px;
+}
+
+.chat-float-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.chat-float-empty-desc {
+  font-size: 12px;
+}
+
+.chat-msg {
+  display: flex;
+}
+
+.chat-msg.user {
+  justify-content: flex-end;
+}
+
+.chat-msg.assistant {
+  justify-content: flex-start;
+}
+
+.chat-bubble {
+  max-width: 85%;
+  border-radius: 14px;
+  padding: 8px 10px;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  background: #f9fafb;
+}
+
+.chat-msg.user .chat-bubble {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.chat-msg.assistant .chat-bubble {
+  background: #eff6ff;
+}
+
+.chat-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  color: #111827;
+}
+
+.chat-typing {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chat-float-input {
+  padding: 8px 10px 10px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  background: #ffffff;
+}
+
+@media (max-width: 600px) {
+  .chat-float {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    height: calc(100vh - 120px);
+    bottom: 80px;
+  }
 }
 </style>
 
