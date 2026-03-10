@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Delete, Promotion } from '@element-plus/icons-vue'
-import { chatAI, type ChatMessage } from '@/utils/aiApi'
+import { chatAIStream, type ChatMessage } from '@/utils/aiApi'
 import { useAIStore } from '@/stores/aiStore'
 
 const router = useRouter()
@@ -43,25 +43,16 @@ const handleSend = async () => {
       role: m.role,
       content: m.content,
     }))
-    const reply = await chatAI(context, {
+    const assistantId = aiStore.addChatMessage({ role: 'assistant', content: '' })
+    let acc = ''
+    await chatAIStream(context, {
       max_tokens: aiStore.userConfig.maxTokens,
       temperature: aiStore.userConfig.temperature,
+      onDelta: (chunk: string) => {
+        acc += chunk
+        aiStore.updateChatMessage(assistantId, { content: acc })
+      },
     })
-    // 先插入一条空的 assistant 消息，再逐字填充，营造“流式”效果
-    const assistantId = aiStore.addChatMessage({ role: 'assistant', content: '' })
-    const full = reply || ''
-    let index = 0
-    const step = Math.max(2, Math.floor(full.length / 80)) // 根据长度自适应速度
-
-    const timer = window.setInterval(() => {
-      index += step
-      if (index >= full.length) {
-        aiStore.updateChatMessage(assistantId, { content: full })
-        window.clearInterval(timer)
-        return
-      }
-      aiStore.updateChatMessage(assistantId, { content: full.slice(0, index) })
-    }, 20)
   } catch (err) {
     const msg = err instanceof Error ? err.message : '发送失败，请稍后重试'
     ElMessage.error(msg)

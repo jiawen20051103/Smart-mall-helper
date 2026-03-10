@@ -76,6 +76,73 @@ export const chatAI = async (messages: ChatMessage[], options: CallAIOptions = {
   }
 }
 
+export const chatAIStream = async (
+  messages: ChatMessage[],
+  options: CallAIOptions & { onDelta: (chunk: string) => void }
+) => {
+  const trimmed = messages
+    .map((m) => ({ role: m.role, content: (m.content || '').trim() }))
+    .filter((m) => m.content.length > 0)
+
+  if (trimmed.length === 0) return
+
+  const url = `${API_BASE_URL}/chat-stream`
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }, ...trimmed],
+        max_tokens: options.max_tokens || 500,
+        temperature: options.temperature || 0.7,
+      }),
+    })
+
+    if (!response.ok || !response.body) {
+      throw new Error(`AI 流式服务不可用（${response.status}）`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const events = buffer.split('\n\n')
+      buffer = events.pop() || ''
+
+      for (const event of events) {
+        const lines = event.split('\n').filter(Boolean)
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue
+          const data = line.slice(5).trim()
+          if (!data || data === '[DONE]') continue
+          try {
+            const parsed = JSON.parse(data)
+            const delta = parsed.choices?.[0]?.delta?.content
+            if (delta) {
+              options.onDelta(delta)
+            }
+          } catch {
+            // 忽略单个解析错误，继续流式
+          }
+        }
+      }
+    }
+  } catch (error) {
+    const friendly = normalizeAIError(error)
+    console.error('AI 流式调用失败:', error)
+    throw new Error(friendly)
+  }
+}
+
 const normalizeAIError = (error: unknown) => {
   if (axios.isAxiosError(error)) {
     const axiosError = error as AxiosError

@@ -2,7 +2,7 @@
 import { reactive, ref, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, Close, Promotion, Loading } from '@element-plus/icons-vue'
-import { chatAI, type ChatMessage, optimizeProductTitle, generateMarketingCopy, generateCustomerServiceReply } from '@/utils/aiApi'
+import { chatAIStream, type ChatMessage, optimizeProductTitle, generateMarketingCopy, generateCustomerServiceReply } from '@/utils/aiApi'
 import { useAIStore } from '@/stores/aiStore'
 
 const aiStore = useAIStore()
@@ -99,24 +99,16 @@ const handleChatSend = async () => {
       role: m.role,
       content: m.content,
     }))
-    const reply = await chatAI(context, {
+    const assistantId = aiStore.addChatMessage({ role: 'assistant', content: '' })
+    let acc = ''
+    await chatAIStream(context, {
       max_tokens: aiStore.userConfig.maxTokens,
       temperature: aiStore.userConfig.temperature,
+      onDelta: (chunk: string) => {
+        acc += chunk
+        aiStore.updateChatMessage(assistantId, { content: acc })
+      },
     })
-    const assistantId = aiStore.addChatMessage({ role: 'assistant', content: '' })
-    const full = reply || ''
-    let index = 0
-    const step = Math.max(2, Math.floor(full.length / 80))
-
-    const timer = window.setInterval(() => {
-      index += step
-      if (index >= full.length) {
-        aiStore.updateChatMessage(assistantId, { content: full })
-        window.clearInterval(timer)
-        return
-      }
-      aiStore.updateChatMessage(assistantId, { content: full.slice(0, index) })
-    }, 20)
   } catch (error) {
     ElMessage.error(getErrorMessage(error) || '发送失败，请稍后重试')
   } finally {
