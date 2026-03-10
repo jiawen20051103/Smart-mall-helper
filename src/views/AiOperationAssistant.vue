@@ -69,10 +69,7 @@ watch(
 const openChat = (seed?: string) => {
   chatVisible.value = true
   if (seed && seed.trim()) {
-    aiStore.addChatMessage({
-      role: 'user',
-      content: `请基于下面内容继续优化/改写，并给出可选版本（可追问）：\n${seed.trim()}`,
-    })
+    chatInput.value = `基于下面内容继续优化/改写，给 2-3 个版本：\n\n${seed.trim()}`
   }
   void scrollChatToBottom()
 }

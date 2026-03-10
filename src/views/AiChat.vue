@@ -70,10 +70,7 @@ const seedFromQuery = () => {
   const seed = route.query.seed
   if (typeof seed !== 'string' || !seed.trim()) return
   const content = seed.trim()
-  aiStore.addChatMessage({
-    role: 'user',
-    content: `请基于下面内容继续优化/改写，并给出可选版本（可追问）：\n${content}`,
-  })
+  input.value = `基于下面内容继续优化/改写，给 2-3 个版本：\n\n${content}`
   router.replace({ path: route.path, query: { ...route.query, seed: undefined } })
 }
 
